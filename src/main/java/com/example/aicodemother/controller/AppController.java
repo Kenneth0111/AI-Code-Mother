@@ -22,7 +22,10 @@ import com.mybatisflex.core.paginate.Page;
 import com.mybatisflex.core.query.QueryWrapper;
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.http.MediaType;
+import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.*;
+import reactor.core.publisher.Flux;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -41,6 +44,21 @@ public class AppController {
 
     @Resource
     private UserService userService;
+
+    // region 应用生成
+
+    /**
+     * 对话生成代码（SSE）
+     */
+    @GetMapping(value = "/chat/gen/code", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public Flux<ServerSentEvent<String>> chatToGenCode(@RequestParam Long appId, @RequestParam String message, HttpServletRequest request) {
+        User loginUser = userService.getLoginUser(request);
+        return appService.chatToGenCode(appId, message, loginUser);
+    }
+
+
+    // endregion
+
 
     // region 用户接口
 

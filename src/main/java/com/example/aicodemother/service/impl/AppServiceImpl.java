@@ -3,12 +3,16 @@ package com.example.aicodemother.service.impl;
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.text.CharSequenceUtil;
+import cn.hutool.json.JSONUtil;
+import com.example.aicodemother.core.AiCodeGeneratorFacade;
 import com.example.aicodemother.exception.BusinessException;
 import com.example.aicodemother.exception.ErrorCode;
+import com.example.aicodemother.exception.ThrowUtils;
 import com.example.aicodemother.mapper.AppMapper;
 import com.example.aicodemother.model.dto.app.AppQueryRequest;
 import com.example.aicodemother.model.entity.App;
 import com.example.aicodemother.model.entity.User;
+import com.example.aicodemother.model.enums.CodeGenTypeEnum;
 import com.example.aicodemother.model.vo.AppVO;
 import com.example.aicodemother.model.vo.UserVO;
 import com.example.aicodemother.service.AppService;
@@ -16,7 +20,10 @@ import com.example.aicodemother.service.UserService;
 import com.mybatisflex.core.query.QueryWrapper;
 import com.mybatisflex.spring.service.impl.ServiceImpl;
 import jakarta.annotation.Resource;
+import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.stereotype.Service;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -35,6 +42,49 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
     @Resource
     private UserService userService;
 
+    @Resource
+    private AiCodeGeneratorFacade aiCodeGeneratorFacade;
+
+    // region 应用生成
+    @Override
+    public Flux<ServerSentEvent<String>> chatToGenCode(Long appId, String message, User loginUser) {
+        // 1. 参数校验
+        ThrowUtils.throwIf(appId == null || appId <= 0, ErrorCode.PARAMS_ERROR, "应用 ID 不能为空");
+        ThrowUtils.throwIf(CharSequenceUtil.isBlank(message), ErrorCode.PARAMS_ERROR, "用户消息不能为空");
+        // 2. 查询应用信息
+        App app = this.getById(appId);
+        ThrowUtils.throwIf(app == null, ErrorCode.NOT_FOUND_ERROR, "应用不存在");
+        // 3. 验证用户是否有权限访问该应用，仅本人可以生成代码
+        if (!app.getUserId().equals(loginUser.getId())) {
+            throw new BusinessException(ErrorCode.NO_AUTH_ERROR, "无权限操作该应用");
+        }
+        // 4. 获取应用的代码生成类型
+        String codeGenType = app.getCodeGenType();
+        CodeGenTypeEnum codeGenTypeEnum = CodeGenTypeEnum.getEnumByValue(codeGenType);
+        ThrowUtils.throwIf(codeGenTypeEnum == null, ErrorCode.PARAMS_ERROR, "不支持的代码生成类型");
+        // 5. 调用 AI 生成代码
+        Flux<String> codeFlux = aiCodeGeneratorFacade.generateAndSaveCodeStream(message, codeGenTypeEnum, appId);
+        // 6. 转换成 ServerSentEvent 格式
+        return codeFlux
+                .map(chunk -> {
+                    Map<String, String> wrapper = Map.of("d", chunk);
+                    String jsonData = JSONUtil.toJsonStr(wrapper);
+                    return ServerSentEvent.<String>builder()
+                            .data(jsonData)
+                            .build();
+                })
+                .concatWith(Mono.just(
+                        ServerSentEvent.<String>builder()
+                                .event("done")
+                                .data("")
+                                .build()
+                ));
+    }
+
+    // endregion
+
+
+    // region CRUD
     @Override
     public void validApp(App app, boolean add) {
         if (app == null) {
@@ -43,8 +93,8 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         String initPrompt = app.getInitPrompt();
         // 创建时 initPrompt 必填
         if (add && CharSequenceUtil.isBlank(initPrompt)) {
-                throw new BusinessException(ErrorCode.PARAMS_ERROR, "initPrompt 不能为空");
-            }
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "initPrompt 不能为空");
+        }
 
         // 校验 initPrompt 长度
         if (CharSequenceUtil.isNotBlank(initPrompt) && initPrompt.length() > 10000) {
@@ -121,4 +171,7 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
                 .eq("userId", userId)
                 .orderBy(sortField, "ascend".equals(sortOrder));
     }
+
+
+    // endregion
 }

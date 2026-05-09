@@ -2,9 +2,12 @@ package com.example.aicodemother.service;
 
 import com.example.aicodemother.model.dto.app.AppQueryRequest;
 import com.example.aicodemother.model.entity.App;
+import com.example.aicodemother.model.entity.User;
 import com.example.aicodemother.model.vo.AppVO;
 import com.mybatisflex.core.query.QueryWrapper;
 import com.mybatisflex.core.service.IService;
+import org.springframework.http.codec.ServerSentEvent;
+import reactor.core.publisher.Flux;
 
 import java.util.List;
 
@@ -14,6 +17,16 @@ import java.util.List;
  * @author <a href="https://github.com/Kenneth0111">程序员张博洋</a>
  */
 public interface AppService extends IService<App> {
+
+    /**
+     * 通过对话生成应用代码
+     *
+     * @param appId 应用 ID
+     * @param message 提示词
+     * @param loginUser 登录用户
+     * @return 生成结果流
+     */
+    Flux<ServerSentEvent<String>> chatToGenCode(Long appId, String message, User loginUser);
 
     /**
      * 校验应用参数
