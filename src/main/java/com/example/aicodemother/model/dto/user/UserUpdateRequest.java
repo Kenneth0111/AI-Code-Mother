@@ -22,6 +22,11 @@ public class UserUpdateRequest implements Serializable {
     private String userName;
 
     /**
+     * 用户密码（明文，传入后由后端加密保存；为空则表示不修改密码）
+     */
+    private String userPassword;
+
+    /**
      * 用户头像
      */
     private String userAvatar;

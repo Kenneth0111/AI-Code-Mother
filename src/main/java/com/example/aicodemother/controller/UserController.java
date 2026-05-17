@@ -1,6 +1,7 @@
 package com.example.aicodemother.controller;
 
 import cn.hutool.core.bean.BeanUtil;
+import cn.hutool.core.text.CharSequenceUtil;
 import com.example.aicodemother.annotation.AuthCheck;
 import com.example.aicodemother.common.BaseResponse;
 import com.example.aicodemother.common.DeleteRequest;
@@ -144,7 +145,7 @@ public class UserController {
     }
 
     /**
-     * 更新用户
+     * 更新用户（仅管理员）
      */
     @PostMapping("/update")
     @AuthCheck(mustRole = UserConstant.ADMIN_ROLE)
@@ -154,6 +155,68 @@ public class UserController {
         }
         User user = new User();
         BeanUtil.copyProperties(userUpdateRequest, user);
+        // 若传入了密码，需加密后保存；否则不更新密码字段
+        String userPassword = userUpdateRequest.getUserPassword();
+        if (userPassword != null && !userPassword.isEmpty()) {
+            user.setUserPassword(userService.getEncryptPassword(userPassword));
+        } else {
+            user.setUserPassword(null);
+        }
+        boolean result = userService.updateById(user);
+        ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR);
+        return ResultUtils.success(true);
+    }
+
+    /**
+     * 获取当前登录用户的完整信息（包含 createTime / editTime 等字段）
+     * 注意：出于安全考虑，密码字段会被脱敏为空字符串
+     */
+    @GetMapping("/get/my")
+    public BaseResponse<User> getMyUser(HttpServletRequest request) {
+        User loginUser = userService.getLoginUser(request);
+        // 重新查一次，确保数据是最新的
+        User user = userService.getById(loginUser.getId());
+        ThrowUtils.throwIf(user == null, ErrorCode.NOT_FOUND_ERROR);
+        // 不向前端暴露加密后的密码
+        user.setUserPassword("");
+        return ResultUtils.success(user);
+    }
+
+    /**
+     * 当前登录用户更新自己的信息
+     */
+    @PostMapping("/update/my")
+    public BaseResponse<Boolean> updateMyUser(@RequestBody UserUpdateRequest userUpdateRequest, HttpServletRequest request) {
+        if (userUpdateRequest == null) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR);
+        }
+        User loginUser = userService.getLoginUser(request);
+        // 校验只能修改自己的信息（前端可能传 id，也可能不传，后端以登录态为准）
+        if (userUpdateRequest.getId() != null && !userUpdateRequest.getId().equals(loginUser.getId())) {
+            throw new BusinessException(ErrorCode.NO_AUTH_ERROR, "无权修改他人信息");
+        }
+        // 必填校验
+        String userName = userUpdateRequest.getUserName();
+        String userProfile = userUpdateRequest.getUserProfile();
+        String userPassword = userUpdateRequest.getUserPassword();
+        if (CharSequenceUtil.hasBlank(userName, userProfile, userPassword)) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "用户名、简介、密码均不能为空");
+        }
+        if (userName.length() > 10) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "用户名最多10个字");
+        }
+        if (userProfile.length() > 20) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "用户简介最多20个字");
+        }
+        if (userPassword.length() < 8) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "密码长度过短");
+        }
+        // 普通用户不允许修改自己的角色
+        User user = new User();
+        BeanUtil.copyProperties(userUpdateRequest, user);
+        user.setId(loginUser.getId());
+        user.setUserRole(null);
+        user.setUserPassword(userService.getEncryptPassword(userPassword));
         boolean result = userService.updateById(user);
         ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR);
         return ResultUtils.success(true);
