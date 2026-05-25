@@ -86,6 +86,12 @@
             <artifactId>langchain4j-community-redis-spring-boot-starter</artifactId>
             <version>1.13.0-beta23</version>
         </dependency>
+        <!-- LangChain4j Redis 记忆存储需要 Jedis 7.x，Spring Boot 默认管理的是 6.x -->
+        <dependency>
+            <groupId>redis.clients</groupId>
+            <artifactId>jedis</artifactId>
+            <version>7.0.0</version>
+        </dependency>
         <!-- 本地缓存 -->
         <dependency>
             <groupId>com.github.ben-manes.caffeine</groupId>

@@ -11,7 +11,7 @@ import com.example.aicodemother.model.dto.chathistory.ChatHistoryQueryRequest;
 import com.example.aicodemother.model.entity.App;
 import com.example.aicodemother.model.entity.ChatHistory;
 import com.example.aicodemother.model.entity.User;
-import com.example.aicodemother.model.enums.MessageTypeEnum;
+import com.example.aicodemother.model.enums.ChatHistoryMessageTypeEnum;
 import com.example.aicodemother.service.AppService;
 import com.example.aicodemother.service.ChatHistoryService;
 import com.mybatisflex.core.paginate.Page;
@@ -53,7 +53,7 @@ public class ChatHistoryServiceImpl extends ServiceImpl<ChatHistoryMapper, ChatH
         ThrowUtils.throwIf(CharSequenceUtil.isBlank(messageType), ErrorCode.PARAMS_ERROR, "消息类型不能为空");
         ThrowUtils.throwIf(userId == null || userId <= 0, ErrorCode.PARAMS_ERROR, "用户 ID 不能为空");
         // 校验消息类型是否合法
-        MessageTypeEnum messageTypeEnum = MessageTypeEnum.getEnumByValue(messageType);
+        ChatHistoryMessageTypeEnum messageTypeEnum = ChatHistoryMessageTypeEnum.getEnumByValue(messageType);
         ThrowUtils.throwIf(messageTypeEnum == null, ErrorCode.PARAMS_ERROR, "不支持的消息类型");
         // 构造实体并保存
         ChatHistory chatHistory = ChatHistory.builder()
@@ -114,9 +114,9 @@ public class ChatHistoryServiceImpl extends ServiceImpl<ChatHistoryMapper, ChatH
             chatMemory.clear();
             // 加载 USER and AI 消息，不加载 SYSTEM 消息
             for (ChatHistory history : historyList) {
-                if (MessageTypeEnum.USER.getValue().equals(history.getMessageType())) {
+                if (ChatHistoryMessageTypeEnum.USER.getValue().equals(history.getMessageType())) {
                     chatMemory.add(UserMessage.from(history.getMessage()));
-                } else if (MessageTypeEnum.AI.getValue().equals(history.getMessageType())) {
+                } else if (ChatHistoryMessageTypeEnum.AI.getValue().equals(history.getMessageType())) {
                     chatMemory.add(AiMessage.from(history.getMessage()));
                 }
                 loadedCount ++;

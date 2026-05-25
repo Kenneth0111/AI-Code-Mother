@@ -8,6 +8,7 @@ import cn.hutool.core.util.RandomUtil;
 import cn.hutool.json.JSONUtil;
 import com.example.aicodemother.constant.AppConstant;
 import com.example.aicodemother.core.AiCodeGeneratorFacade;
+import com.example.aicodemother.core.handler.StreamHandlerExecutor;
 import com.example.aicodemother.exception.BusinessException;
 import com.example.aicodemother.exception.ErrorCode;
 import com.example.aicodemother.exception.ThrowUtils;
@@ -16,7 +17,7 @@ import com.example.aicodemother.model.dto.app.AppQueryRequest;
 import com.example.aicodemother.model.entity.App;
 import com.example.aicodemother.model.entity.User;
 import com.example.aicodemother.model.enums.CodeGenTypeEnum;
-import com.example.aicodemother.model.enums.MessageTypeEnum;
+import com.example.aicodemother.model.enums.ChatHistoryMessageTypeEnum;
 import com.example.aicodemother.model.vo.AppVO;
 import com.example.aicodemother.model.vo.UserVO;
 import com.example.aicodemother.service.AppService;
@@ -64,9 +65,12 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
     @Lazy
     private ChatHistoryService chatHistoryService;
 
+    @Resource
+    private StreamHandlerExecutor streamHandlerExecutor;
+
     // region 应用生成
     @Override
-    public Flux<ServerSentEvent<String>> chatToGenCode(Long appId, String message, User loginUser) {
+    public Flux<String> chatToGenCode(Long appId, String message, User loginUser) {
         // 1. 参数校验
         ThrowUtils.throwIf(appId == null || appId <= 0, ErrorCode.PARAMS_ERROR, "应用 ID 不能为空");
         ThrowUtils.throwIf(CharSequenceUtil.isBlank(message), ErrorCode.PARAMS_ERROR, "用户消息不能为空");
@@ -82,46 +86,11 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         CodeGenTypeEnum codeGenTypeEnum = CodeGenTypeEnum.getEnumByValue(codeGenType);
         ThrowUtils.throwIf(codeGenTypeEnum == null, ErrorCode.PARAMS_ERROR, "不支持的代码生成类型");
         // 5. 先持久化用户消息到对话历史
-        chatHistoryService.addChatMessage(appId, message, MessageTypeEnum.USER.getValue(), loginUser.getId());
+        chatHistoryService.addChatMessage(appId, message, ChatHistoryMessageTypeEnum.USER.getValue(), loginUser.getId());
         // 6. 调用 AI 生成代码（流式），同时累积完整内容用于回复结束后入库
-        Flux<String> codeFlux = aiCodeGeneratorFacade.generateAndSaveCodeStream(message, codeGenTypeEnum, appId);
-        StringBuilder aiResponseBuilder = new StringBuilder();
-        // 7. 转换成 ServerSentEvent 格式，并在完成 / 出错时落库 AI 消息
-        return codeFlux
-                .map(chunk -> {
-                    aiResponseBuilder.append(chunk);
-                    Map<String, String> wrapper = Map.of("d", chunk);
-                    String jsonData = JSONUtil.toJsonStr(wrapper);
-                    return ServerSentEvent.<String>builder()
-                            .data(jsonData)
-                            .build();
-                })
-                .doOnComplete(() -> {
-                    // AI 成功回复完毕，保存完整内容
-                    String aiResponse = aiResponseBuilder.toString();
-                    if (CharSequenceUtil.isNotBlank(aiResponse)) {
-                        try {
-                            chatHistoryService.addChatMessage(appId, aiResponse, MessageTypeEnum.AI.getValue(), loginUser.getId());
-                        } catch (Exception e) {
-                            log.error("保存 AI 对话历史失败：appId={}", appId, e);
-                        }
-                    }
-                })
-                .doOnError(error -> {
-                    // AI 回复失败，记录错误信息，确保对话完整性
-                    String errorMessage = "AI 回复失败：" + error.getMessage();
-                    try {
-                        chatHistoryService.addChatMessage(appId, errorMessage, MessageTypeEnum.AI.getValue(), loginUser.getId());
-                    } catch (Exception e) {
-                        log.error("保存 AI 错误对话历史失败：appId={}", appId, e);
-                    }
-                })
-                .concatWith(Mono.just(
-                        ServerSentEvent.<String>builder()
-                                .event("done")
-                                .data("")
-                                .build()
-                ));
+        Flux<String> codeStream = aiCodeGeneratorFacade.generateAndSaveCodeStream(message, codeGenTypeEnum, appId);
+        // 7. 收集 AI 响应内容并在完成后记录到对话历史
+        return streamHandlerExecutor.doExecute(codeStream, chatHistoryService, appId, loginUser, codeGenTypeEnum);
     }
 
     // endregion
