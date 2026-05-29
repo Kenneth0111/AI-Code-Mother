@@ -5,9 +5,12 @@ import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
 import com.example.aicodemother.ai.model.message.*;
+import com.example.aicodemother.constant.AppConstant;
+import com.example.aicodemother.core.builder.VueProjectBuilder;
 import com.example.aicodemother.model.entity.User;
 import com.example.aicodemother.model.enums.ChatHistoryMessageTypeEnum;
 import com.example.aicodemother.service.ChatHistoryService;
+import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
@@ -22,6 +25,9 @@ import java.util.Set;
 @Slf4j
 @Component
 public class JsonMessageStreamHandler {
+
+    @Resource
+    private VueProjectBuilder vueProjectBuilder;
 
     /**
      * 处理 TokenStream（VUE_PROJECT）
@@ -50,6 +56,8 @@ public class JsonMessageStreamHandler {
                     // 流式响应完成后，添加 AI 消息到对话历史
                     String aiResponse = chatHistoryStringBuilder.toString();
                     chatHistoryService.addChatMessage(appId, aiResponse, ChatHistoryMessageTypeEnum.AI.getValue(), loginUser.getId());
+                    String projectPath = AppConstant.CODE_OUTPUT_ROOT_DIR + "/vue_project_" + appId;
+                    vueProjectBuilder.buildProjectAsync(projectPath);
                 })
                 .doOnError(error -> {
                     // 如果AI回复失败，也要记录错误消息
@@ -102,6 +110,16 @@ public class JsonMessageStreamHandler {
                 String output = String.format("\n\n%s\n\n", result);
                 chatHistoryStringBuilder.append(output);
                 return output;
+            }
+            case PARTIAL_TOOL_CALL -> {
+                // 工具调用片段：在完整 TOOL_REQUEST 到达前，提前告知前端正在选择工具
+                PartialToolCallMessage partialMessage = JSONUtil.toBean(chunk, PartialToolCallMessage.class);
+                String toolId = partialMessage.getId();
+                if (toolId != null && !seenToolIds.contains(toolId)) {
+                    seenToolIds.add(toolId);
+                    return "\n\n[选择工具\uD83D\uDD27] 写入文件\n\n";
+                }
+                return "";
             }
             default -> {
                 log.error("不支持的消息类型: {}", typeEnum);

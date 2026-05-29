@@ -43,8 +43,10 @@ public class StaticResourceController {
                 headers.add("Location", request.getRequestURI() + "/");
                 return new ResponseEntity<>(headers, HttpStatus.MOVED_PERMANENTLY);
             }
-            // 默认返回 index.html
-            if (resourcePath.equals("/")) {
+            // 目录访问（含 /dist/ 等子目录）统一映射到 index.html
+            if (resourcePath.endsWith("/")) {
+                resourcePath = resourcePath + "index.html";
+            } else if (resourcePath.equals("/")) {
                 resourcePath = "/index.html";
             }
             // 构建文件路径

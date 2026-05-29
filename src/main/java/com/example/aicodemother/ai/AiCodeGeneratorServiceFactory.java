@@ -102,8 +102,10 @@ public class AiCodeGeneratorServiceFactory {
                 .maxMessages(50)
                 .chatMemoryStore(redisChatMemoryStore)
                 .build();
-        // 从数据库中加载对话历史到对话记忆中
-        chatHistoryService.loadChatHistoryToMemory(appId, chatMemory, 20);
+        // VUE_PROJECT 使用推理模型，其 reasoning_content 无法从数据库还原，仅依赖 Redis 记忆
+        if (codeGenType != CodeGenTypeEnum.VUE_PROJECT) {
+            chatHistoryService.loadChatHistoryToMemory(appId, chatMemory, 20);
+        }
         return switch (codeGenType) {
             case VUE_PROJECT -> AiServices.builder(AiCodeGeneratorService.class)
                     .streamingChatModel(reasoningStreamingChatModel)

@@ -126,7 +126,7 @@ public class AppController {
     }
 
     /**
-     * 用户编辑自己的应用（仅支持修改应用名称）
+     * 用户编辑自己的应用（支持修改应用名称、应用封面）
      */
     @PostMapping("/update")
     public BaseResponse<Boolean> updateApp(@RequestBody AppUpdateRequest appUpdateRequest, HttpServletRequest request) {
@@ -142,10 +142,11 @@ public class AppController {
         if (!oldApp.getUserId().equals(loginUser.getId())) {
             throw new BusinessException(ErrorCode.NO_AUTH_ERROR);
         }
-        // 更新名称
+        // 更新名称和封面
         App app = new App();
         app.setId(id);
         app.setAppName(appUpdateRequest.getAppName());
+        app.setCover(appUpdateRequest.getCover());
         appService.validApp(app, false);
         app.setEditTime(LocalDateTime.now());
         boolean result = appService.updateById(app);
