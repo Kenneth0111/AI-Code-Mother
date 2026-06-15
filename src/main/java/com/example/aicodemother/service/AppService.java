@@ -6,7 +6,6 @@ import com.example.aicodemother.model.entity.User;
 import com.example.aicodemother.model.vo.AppVO;
 import com.mybatisflex.core.query.QueryWrapper;
 import com.mybatisflex.core.service.IService;
-import org.springframework.http.codec.ServerSentEvent;
 import reactor.core.publisher.Flux;
 
 import java.util.List;
@@ -36,6 +35,14 @@ public interface AppService extends IService<App> {
      * @return 可访问的部署地址
      */
     String deployApp(Long appId, User loginUser);
+
+    /**
+     * 异步生成应用截图，得到cosUrl，并更新数据库
+     *
+     * @param appId 应用ID
+     * @param appUrl 应用访问URL
+     */
+    void generateAppScreenshotAsync(Long appId, String appUrl);
 
     /**
      * 校验应用参数

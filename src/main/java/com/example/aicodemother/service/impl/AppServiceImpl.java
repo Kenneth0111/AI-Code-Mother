@@ -5,7 +5,6 @@ import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.io.FileUtil;
 import cn.hutool.core.text.CharSequenceUtil;
 import cn.hutool.core.util.RandomUtil;
-import cn.hutool.json.JSONUtil;
 import com.example.aicodemother.constant.AppConstant;
 import com.example.aicodemother.core.AiCodeGeneratorFacade;
 import com.example.aicodemother.core.builder.VueProjectBuilder;
@@ -17,23 +16,22 @@ import com.example.aicodemother.mapper.AppMapper;
 import com.example.aicodemother.model.dto.app.AppQueryRequest;
 import com.example.aicodemother.model.entity.App;
 import com.example.aicodemother.model.entity.User;
-import com.example.aicodemother.model.enums.CodeGenTypeEnum;
 import com.example.aicodemother.model.enums.ChatHistoryMessageTypeEnum;
+import com.example.aicodemother.model.enums.CodeGenTypeEnum;
 import com.example.aicodemother.model.vo.AppVO;
 import com.example.aicodemother.model.vo.UserVO;
 import com.example.aicodemother.service.AppService;
 import com.example.aicodemother.service.ChatHistoryService;
+import com.example.aicodemother.service.ScreenshotService;
 import com.example.aicodemother.service.UserService;
 import com.mybatisflex.core.query.QueryWrapper;
 import com.mybatisflex.spring.service.impl.ServiceImpl;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Lazy;
-import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
 
 import java.io.File;
 import java.io.Serializable;
@@ -71,6 +69,9 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
 
     @Resource
     private VueProjectBuilder vueProjectBuilder;
+
+    @Resource
+    private ScreenshotService screenshotService;
 
     // region 应用生成
     @Override
@@ -154,9 +155,34 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         updateApp.setDeployedTime(LocalDateTime.now());
         boolean updateResult = this.updateById(updateApp);
         ThrowUtils.throwIf(!updateResult, ErrorCode.OPERATION_ERROR, "更新应用部署信息失败");
-        // 10. 返回可访问的 URL
-        return String.format("%s/%s/", AppConstant.CODE_DEPLOY_HOST, deployKey);
+        // 10. 得到可访问的 URL
+        String appDeployUrl = String.format("%s/%s/", AppConstant.CODE_DEPLOY_HOST, deployKey);
+        // 11. 异步生成截图并更新应用封面
+        generateAppScreenshotAsync(appId, appDeployUrl);
+        return appDeployUrl;
     }
+
+    /**
+     * 异步生成应用截图，得到cosUrl，并更新数据库
+     *
+     * @param appId 应用ID
+     * @param appUrl 应用访问URL
+     */
+    @Override
+    public void generateAppScreenshotAsync(Long appId, String appUrl) {
+        // 启用虚拟线程并执行
+        Thread.startVirtualThread(() -> {
+            // 调用截图服务，生成截图并上传，得到cosUrl
+            String cosUrl = screenshotService.generateAndUploadScreenshot(appUrl);
+            // 更新cover
+            App updateApp = new App();
+            updateApp.setId(appId);
+            updateApp.setCover(cosUrl);
+            boolean updated = this.updateById(updateApp);
+            ThrowUtils.throwIf(!updated, ErrorCode.OPERATION_ERROR, "更新应用封面字段失败");
+        });
+    }
+
 
     // endregion
 

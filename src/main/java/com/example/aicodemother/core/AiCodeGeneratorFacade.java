@@ -127,32 +127,25 @@ public class AiCodeGeneratorFacade {
      * @return Flux<String> 流式响应
      */
     private Flux<String> processTokenStream(TokenStream tokenStream) {
-        return Flux.create(sink -> {
-            tokenStream.onPartialResponse((String partialResponse) -> {
-                        AiResponseMessage aiResponseMessage = new AiResponseMessage(partialResponse);
-                        sink.next(JSONUtil.toJsonStr(aiResponseMessage));
-                    })
-                    .onPartialToolCall(partialToolCall -> {
-                        PartialToolCallMessage partialToolCallMessage = new PartialToolCallMessage(partialToolCall);
-                        sink.next(JSONUtil.toJsonStr(partialToolCallMessage));
-                    })
-                    .beforeToolExecution(beforeToolExecution -> {
-                        ToolRequestMessage toolRequestMessage = new ToolRequestMessage(beforeToolExecution);
-                        sink.next(JSONUtil.toJsonStr(toolRequestMessage));
-                    })
-                    .onToolExecuted((ToolExecution toolExecution) -> {
-                        ToolExecutedMessage toolExecutedMessage = new ToolExecutedMessage(toolExecution);
-                        sink.next(JSONUtil.toJsonStr(toolExecutedMessage));
-                    })
-                    .onCompleteResponse((ChatResponse response) -> {
-                        sink.complete();
-                    })
-                    .onError((Throwable error) -> {
-                        error.printStackTrace();
-                        sink.error(error);
-                    })
-                    .start();
-        });
+        return Flux.create(sink -> tokenStream.onPartialResponse((String partialResponse) -> {
+                    AiResponseMessage aiResponseMessage = new AiResponseMessage(partialResponse);
+                    sink.next(JSONUtil.toJsonStr(aiResponseMessage));
+                }).onPartialToolCall(partialToolCall -> {
+                    PartialToolCallMessage partialToolCallMessage = new PartialToolCallMessage(partialToolCall);
+                    sink.next(JSONUtil.toJsonStr(partialToolCallMessage));
+                }).beforeToolExecution(beforeToolExecution -> {
+                    ToolRequestMessage toolRequestMessage = new ToolRequestMessage(beforeToolExecution);
+                    sink.next(JSONUtil.toJsonStr(toolRequestMessage));
+                }).onToolExecuted((ToolExecution toolExecution) -> {
+                    ToolExecutedMessage toolExecutedMessage = new ToolExecutedMessage(toolExecution);
+                    sink.next(JSONUtil.toJsonStr(toolExecutedMessage));
+                })
+                .onCompleteResponse((ChatResponse response) -> sink.complete())
+                .onError((Throwable error) -> {
+                    log.error("TokenStream 处理失败", error);
+                    sink.error(error);
+                })
+                .start());
     }
 
 }
