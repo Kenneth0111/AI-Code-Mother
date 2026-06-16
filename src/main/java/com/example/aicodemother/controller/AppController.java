@@ -1,7 +1,6 @@
 package com.example.aicodemother.controller;
 
 import cn.hutool.core.bean.BeanUtil;
-import cn.hutool.core.text.CharSequenceUtil;
 import cn.hutool.json.JSONUtil;
 import com.example.aicodemother.annotation.AuthCheck;
 import com.example.aicodemother.common.BaseResponse;
@@ -15,7 +14,6 @@ import com.example.aicodemother.exception.ThrowUtils;
 import com.example.aicodemother.model.dto.app.*;
 import com.example.aicodemother.model.entity.App;
 import com.example.aicodemother.model.entity.User;
-import com.example.aicodemother.model.enums.CodeGenTypeEnum;
 import com.example.aicodemother.model.vo.AppVO;
 import com.example.aicodemother.service.AppService;
 import com.example.aicodemother.service.ProjectDownloadService;
@@ -152,23 +150,9 @@ public class AppController {
     @PostMapping("/add")
     public BaseResponse<Long> addApp(@RequestBody AppAddRequest appAddRequest, HttpServletRequest request) {
         ThrowUtils.throwIf(appAddRequest == null, ErrorCode.PARAMS_ERROR);
-        String initPrompt = appAddRequest.getInitPrompt();
-        ThrowUtils.throwIf(CharSequenceUtil.isBlank(initPrompt), ErrorCode.PARAMS_ERROR, "初始化 prompt 不能为空");
-        App app = new App();
-        BeanUtil.copyProperties(appAddRequest, app);
-        // 参数校验
-        appService.validApp(app, true);
-        // 填充默认值
         User loginUser = userService.getLoginUser(request);
-        app.setUserId(loginUser.getId());
-        app.setPriority(AppConstant.DEFAULT_APP_PRIORITY);
-        // 应用名称暂时为 initPrompt 前 12 位
-        app.setAppName(initPrompt.substring(0, Math.min(initPrompt.length(), 12)));
-        // 暂时设置为多文件生成
-        app.setCodeGenType(CodeGenTypeEnum.VUE_PROJECT.getValue());
-        boolean result = appService.save(app);
-        ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR);
-        return ResultUtils.success(app.getId());
+        Long appId = appService.createApp(appAddRequest, loginUser);
+        return ResultUtils.success(appId);
     }
 
     /**

@@ -1,5 +1,6 @@
 package com.example.aicodemother.service;
 
+import com.example.aicodemother.model.dto.app.AppAddRequest;
 import com.example.aicodemother.model.dto.app.AppQueryRequest;
 import com.example.aicodemother.model.entity.App;
 import com.example.aicodemother.model.entity.User;
@@ -26,6 +27,15 @@ public interface AppService extends IService<App> {
      * @return 生成结果流
      */
     Flux<String> chatToGenCode(Long appId, String message, User loginUser);
+
+    /**
+     * 创建应用
+     *
+     * @param appAddRequest 应用创建请求
+     * @param loginUser 登录用户
+     * @return 应用 ID
+     */
+    Long createApp(AppAddRequest appAddRequest, User loginUser);
 
     /**
      * 应用部署
