@@ -116,9 +116,9 @@ public class AiCodeGeneratorServiceFactory {
                     .streamingChatModel(reasoningStreamingChatModel)
                     .chatMemoryProvider(memoryId -> chatMemory)
                     .tools((Object[]) toolManager.getAllTools())
-                    // 硬上限：防止 agentic 循环失控空转。超限时 langchain4j 抛
-                    // "exceeded sequential tool invocations"，由 facade 的 onError 优雅结束
-                    .maxSequentialToolsInvocations(50)
+                    // 硬上限：使用批量写入后，正常生成只需 3-5 次工具调用
+                    // 设为 15 次足够应对修改场景，同时防止循环失控
+                    .maxSequentialToolsInvocations(15)
                     // 处理工具调用幻觉问题
                     .hallucinatedToolNameStrategy(toolExecutionRequest -> ToolExecutionResultMessage.from(toolExecutionRequest, "Error: there is no tool called " + toolExecutionRequest.name()))
                     .build();
