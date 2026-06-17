@@ -70,6 +70,20 @@ public class AppController {
                             .data(jsonData)
                             .build();
                 })
+                .onErrorResume(error -> {
+                    String errorMsg = "生成过程出现异常，请重新发送消息重试。";
+                    Map<String, String> wrapper = Map.of("d", "[系统提示] " + errorMsg);
+                    String jsonData = JSONUtil.toJsonStr(wrapper);
+                    return Flux.just(
+                            ServerSentEvent.<String>builder()
+                                    .data(jsonData)
+                                    .build(),
+                            ServerSentEvent.<String>builder()
+                                    .event("done")
+                                    .data("")
+                                    .build()
+                    );
+                })
                 .concatWith(Mono.just(
                         // 发送结束事件
                         ServerSentEvent.<String>builder()

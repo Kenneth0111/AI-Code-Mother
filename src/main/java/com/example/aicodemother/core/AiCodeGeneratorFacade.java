@@ -142,17 +142,45 @@ public class AiCodeGeneratorFacade {
                 })
                 .onCompleteResponse((ChatResponse response) -> sink.complete())
                 .onError((Throwable error) -> {
-                    if (error.getMessage() != null && error.getMessage().contains("exceeded") && error.getMessage().contains("sequential tool invocations")) {
-                        log.warn("工具调用次数超限，优雅结束流: {}", error.getMessage());
+                    String errorMsg = error.getMessage() != null ? error.getMessage() : "";
+                    if (errorMsg.contains("exceeded") && errorMsg.contains("sequential tool invocations")) {
+                        log.warn("工具调用次数超限，优雅结束流: {}", errorMsg);
                         AiResponseMessage msg = new AiResponseMessage("\n\n[系统提示] 工具调用次数已达上限，操作已结束。已生成的文件请检查预览确认效果。");
+                        sink.next(JSONUtil.toJsonStr(msg));
+                        sink.complete();
+                    } else if (isConnectionError(error)) {
+                        log.warn("网络连接异常，优雅结束流: {}", errorMsg);
+                        AiResponseMessage msg = new AiResponseMessage("\n\n[系统提示] 网络连接中断，已生成的文件已保存。如需继续生成，请重新发送消息。");
                         sink.next(JSONUtil.toJsonStr(msg));
                         sink.complete();
                     } else {
                         log.error("TokenStream 处理失败", error);
-                        sink.error(error);
+                        AiResponseMessage msg = new AiResponseMessage("\n\n[系统提示] 生成过程出现异常：" + errorMsg + "。请稍后重试。");
+                        sink.next(JSONUtil.toJsonStr(msg));
+                        sink.complete();
                     }
                 })
                 .start());
+    }
+
+    private boolean isConnectionError(Throwable error) {
+        Throwable cause = error;
+        while (cause != null) {
+            String msg = cause.getMessage();
+            if (msg != null && (msg.contains("Connection reset")
+                    || msg.contains("Connection refused")
+                    || msg.contains("connect timed out")
+                    || msg.contains("Read timed out")
+                    || msg.contains("Broken pipe")
+                    || msg.contains("Connection closed")
+                    || msg.contains("Stream closed")
+                    || msg.contains("SocketException")
+                    || msg.contains("EOFException"))) {
+                return true;
+            }
+            cause = cause.getCause();
+        }
+        return false;
     }
 
 }
