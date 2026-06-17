@@ -142,8 +142,15 @@ public class AiCodeGeneratorFacade {
                 })
                 .onCompleteResponse((ChatResponse response) -> sink.complete())
                 .onError((Throwable error) -> {
-                    log.error("TokenStream 处理失败", error);
-                    sink.error(error);
+                    if (error.getMessage() != null && error.getMessage().contains("exceeded") && error.getMessage().contains("sequential tool invocations")) {
+                        log.warn("工具调用次数超限，优雅结束流: {}", error.getMessage());
+                        AiResponseMessage msg = new AiResponseMessage("\n\n[系统提示] 工具调用次数已达上限，操作已结束。已生成的文件请检查预览确认效果。");
+                        sink.next(JSONUtil.toJsonStr(msg));
+                        sink.complete();
+                    } else {
+                        log.error("TokenStream 处理失败", error);
+                        sink.error(error);
+                    }
                 })
                 .start());
     }

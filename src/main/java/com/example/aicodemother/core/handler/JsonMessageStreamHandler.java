@@ -1,10 +1,11 @@
 package com.example.aicodemother.core.handler;
 
-import cn.hutool.core.io.FileUtil;
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
 import com.example.aicodemother.ai.model.message.*;
+import com.example.aicodemother.ai.tools.BaseTool;
+import com.example.aicodemother.ai.tools.ToolManager;
 import com.example.aicodemother.constant.AppConstant;
 import com.example.aicodemother.core.builder.VueProjectBuilder;
 import com.example.aicodemother.model.entity.User;
@@ -29,6 +30,9 @@ public class JsonMessageStreamHandler {
     @Resource
     private VueProjectBuilder vueProjectBuilder;
 
+    @Resource
+    private ToolManager toolManager;
+
     /**
      * 处理 TokenStream（VUE_PROJECT）
      * 解析 JSON 消息并重组为完整的响应格式
@@ -47,10 +51,8 @@ public class JsonMessageStreamHandler {
         // 用于跟踪已经见过的工具ID，判断是否是第一次调用
         Set<String> seenToolIds = new HashSet<>();
         return originFlux
-                .map(chunk -> {
-                    // 解析每个 JSON 消息块
-                    return handleJsonMessageChunk(chunk, chatHistoryStringBuilder, seenToolIds);
-                })
+                // 解析每个 JSON 消息块
+                .map(chunk -> handleJsonMessageChunk(chunk, chatHistoryStringBuilder, seenToolIds))
                 .filter(StrUtil::isNotEmpty) // 过滤空字串
                 .doOnComplete(() -> {
                     // 流式响应完成后，添加 AI 消息到对话历史
@@ -73,59 +75,64 @@ public class JsonMessageStreamHandler {
         // 解析 JSON
         StreamMessage streamMessage = JSONUtil.toBean(chunk, StreamMessage.class);
         StreamMessageTypeEnum typeEnum = StreamMessageTypeEnum.getEnumByValue(streamMessage.getType());
-        switch (typeEnum) {
-            case AI_RESPONSE -> {
-                AiResponseMessage aiMessage = JSONUtil.toBean(chunk, AiResponseMessage.class);
-                String data = aiMessage.getData();
-                // 直接拼接响应
-                chatHistoryStringBuilder.append(data);
-                return data;
-            }
-            case TOOL_REQUEST -> {
-                ToolRequestMessage toolRequestMessage = JSONUtil.toBean(chunk, ToolRequestMessage.class);
-                String toolId = toolRequestMessage.getId();
-                // 检查是否是第一次看到这个工具 ID
-                if (toolId != null && !seenToolIds.contains(toolId)) {
-                    // 第一次调用这个工具，记录 ID 并完整返回工具信息
-                    seenToolIds.add(toolId);
-                    return "\n\n[选择工具\uD83D\uDD27] 写入文件\n\n";
-                } else {
-                    // 不是第一次调用这个工具，直接返回空
+        if (typeEnum != null) {
+            switch (typeEnum) {
+                case AI_RESPONSE -> {
+                    AiResponseMessage aiMessage = JSONUtil.toBean(chunk, AiResponseMessage.class);
+                    String data = aiMessage.getData();
+                    // 直接拼接响应
+                    chatHistoryStringBuilder.append(data);
+                    return data;
+                }
+                case TOOL_REQUEST -> {
+                    ToolRequestMessage toolRequestMessage = JSONUtil.toBean(chunk, ToolRequestMessage.class);
+                    String toolId = toolRequestMessage.getId();
+                    String toolName = toolRequestMessage.getName();
+                    // 检查是否是第一次看到这个工具 ID
+                    if (toolId != null && !seenToolIds.contains(toolId)) {
+                        // 第一次调用这个工具，记录 ID 并完整返回工具信息
+                        seenToolIds.add(toolId);
+                        BaseTool tool = toolManager.getTool(toolName);
+                        // 返回格式化的工具调用信息
+                        return tool.generateToolRequestResponse();
+                    } else {
+                        // 不是第一次调用这个工具，直接返回空
+                        return "";
+                    }
+                }
+                case TOOL_EXECUTED -> {
+                    ToolExecutedMessage toolExecutedMessage = JSONUtil.toBean(chunk, ToolExecutedMessage.class);
+                    JSONObject jsonObject = JSONUtil.parseObj(toolExecutedMessage.getArguments());
+                    // 根据工具名称获取工具实例并生成相应的结果格式
+                    String toolName = toolExecutedMessage.getName();
+                    BaseTool tool = toolManager.getTool(toolName);
+                    String result = tool.generateToolExecutedResult(jsonObject);
+                    // 输出前端和要持久化的内容
+                    String output = String.format("%n%n%s%n%n", result);
+                    chatHistoryStringBuilder.append(output);
+                    return output;
+                }
+                case PARTIAL_TOOL_CALL -> {
+                    // 工具调用片段：在完整 TOOL_REQUEST 到达前，提前告知前端正在选择工具
+                    PartialToolCallMessage partialMessage = JSONUtil.toBean(chunk, PartialToolCallMessage.class);
+                    String toolId = partialMessage.getId();
+                    String toolName = partialMessage.getName();
+                    if (toolId != null && !seenToolIds.contains(toolId)) {
+                        seenToolIds.add(toolId);
+                        BaseTool tool = toolManager.getTool(toolName);
+                        return tool.generateToolRequestResponse();
+                    } else {
+                        return "";
+                    }
+                }
+                default -> {
+                    log.error("不支持的消息类型: {}", typeEnum);
                     return "";
                 }
             }
-            case TOOL_EXECUTED -> {
-                ToolExecutedMessage toolExecutedMessage = JSONUtil.toBean(chunk, ToolExecutedMessage.class);
-                JSONObject jsonObject = JSONUtil.parseObj(toolExecutedMessage.getArguments());
-                String relativeFilePath = jsonObject.getStr("relativeFilePath");
-                String suffix = FileUtil.getSuffix(relativeFilePath);
-                String content = jsonObject.getStr("content");
-                String result = String.format("""
-                        [工具调用🔧] 写入文件 %s
-                        ```%s
-                        %s
-                        ```
-                        """, relativeFilePath, suffix, content);
-                // 输出前端和要持久化的内容
-                String output = String.format("\n\n%s\n\n", result);
-                chatHistoryStringBuilder.append(output);
-                return output;
-            }
-            case PARTIAL_TOOL_CALL -> {
-                // 工具调用片段：在完整 TOOL_REQUEST 到达前，提前告知前端正在选择工具
-                PartialToolCallMessage partialMessage = JSONUtil.toBean(chunk, PartialToolCallMessage.class);
-                String toolId = partialMessage.getId();
-                if (toolId != null && !seenToolIds.contains(toolId)) {
-                    seenToolIds.add(toolId);
-                    return "\n\n[选择工具\uD83D\uDD27] 写入文件\n\n";
-                }
-                return "";
-            }
-            default -> {
-                log.error("不支持的消息类型: {}", typeEnum);
-                return "";
-            }
         }
+        // typeEnum 为 null（未知类型）时的兜底返回
+        return "";
     }
 }
 

@@ -1,6 +1,6 @@
 package com.example.aicodemother.ai;
 
-import com.example.aicodemother.ai.tools.FileWriteTool;
+import com.example.aicodemother.ai.tools.ToolManager;
 import com.example.aicodemother.exception.BusinessException;
 import com.example.aicodemother.exception.ErrorCode;
 import com.example.aicodemother.model.enums.CodeGenTypeEnum;
@@ -38,6 +38,9 @@ public class AiCodeGeneratorServiceFactory {
 
     @Resource
     private ChatHistoryService chatHistoryService;
+
+    @Resource
+    private ToolManager toolManager;
 
     /**
      * AI 服务实例缓存
@@ -96,11 +99,13 @@ public class AiCodeGeneratorServiceFactory {
     private AiCodeGeneratorService createAiCodeGeneratorService(long appId, CodeGenTypeEnum codeGenType) {
         log.info("为 appId: {} 创建新的 AI 服务实例", appId);
         // 根据 appId 构建独立的对话记忆
+        // 使用 SafeChatMemoryStore 包裹 Redis 存储：读取记忆时清理残缺的工具调用消息，
+        // 避免把非法对话（带 tool_calls 却缺少对应结果）发给模型导致 400 -> SSE 500
         MessageWindowChatMemory chatMemory = MessageWindowChatMemory
                 .builder()
                 .id(appId)
                 .maxMessages(50)
-                .chatMemoryStore(redisChatMemoryStore)
+                .chatMemoryStore(new SafeChatMemoryStore(redisChatMemoryStore))
                 .build();
         // VUE_PROJECT 使用推理模型，其 reasoning_content 无法从数据库还原，仅依赖 Redis 记忆
         if (codeGenType != CodeGenTypeEnum.VUE_PROJECT) {
@@ -110,7 +115,10 @@ public class AiCodeGeneratorServiceFactory {
             case VUE_PROJECT -> AiServices.builder(AiCodeGeneratorService.class)
                     .streamingChatModel(reasoningStreamingChatModel)
                     .chatMemoryProvider(memoryId -> chatMemory)
-                    .tools(new FileWriteTool())
+                    .tools((Object[]) toolManager.getAllTools())
+                    // 硬上限：防止 agentic 循环失控空转。超限时 langchain4j 抛
+                    // "exceeded sequential tool invocations"，由 facade 的 onError 优雅结束
+                    .maxSequentialToolsInvocations(50)
                     // 处理工具调用幻觉问题
                     .hallucinatedToolNameStrategy(toolExecutionRequest -> ToolExecutionResultMessage.from(toolExecutionRequest, "Error: there is no tool called " + toolExecutionRequest.name()))
                     .build();
