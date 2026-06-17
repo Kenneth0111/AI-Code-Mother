@@ -6,6 +6,8 @@ import org.springframework.stereotype.Component;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.InputStreamReader;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -15,20 +17,36 @@ import java.util.concurrent.TimeUnit;
 @Component
 public class VueProjectBuilder {
 
+    public enum BuildStatus {
+        BUILDING, SUCCESS, FAILED
+    }
+
+    private final Map<Long, BuildStatus> buildStatusMap = new ConcurrentHashMap<>();
+
+    /**
+     * 查询构建状态
+     */
+    public BuildStatus getBuildStatus(Long appId) {
+        return buildStatusMap.get(appId);
+    }
+
     /**
      * 异步构建项目（不阻塞主流程）
      *
      * @param projectPath 项目路径
+     * @param appId       应用ID，用于跟踪构建状态
      */
-    public void buildProjectAsync(String projectPath) {
-        // 在单独的线程中执行构建，避免阻塞主流程
-        Thread.ofVirtual().name("vue-builder-" + System.currentTimeMillis()).start(() -> {
+    public void buildProjectAsync(String projectPath, Long appId) {
+        buildStatusMap.put(appId, BuildStatus.BUILDING);
+        Thread.ofVirtual().name("vue-builder-" + appId).start(() -> {
             try {
                 boolean success = buildProject(projectPath);
+                buildStatusMap.put(appId, success ? BuildStatus.SUCCESS : BuildStatus.FAILED);
                 if (!success) {
                     log.error("异步构建 Vue 项目失败，项目路径: {}", projectPath);
                 }
             } catch (Exception e) {
+                buildStatusMap.put(appId, BuildStatus.FAILED);
                 log.error("异步构建 Vue 项目时发生异常: {}", e.getMessage(), e);
             }
         });

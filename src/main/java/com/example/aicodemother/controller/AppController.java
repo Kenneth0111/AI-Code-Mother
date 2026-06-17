@@ -83,6 +83,27 @@ public class AppController {
     // endregion
 
 
+    // region 构建状态查询
+
+    @Resource
+    private com.example.aicodemother.core.builder.VueProjectBuilder vueProjectBuilder;
+
+    /**
+     * 查询 Vue 项目构建状态
+     */
+    @GetMapping("/build/status")
+    public BaseResponse<String> getBuildStatus(@RequestParam Long appId) {
+        ThrowUtils.throwIf(appId == null || appId <= 0, ErrorCode.PARAMS_ERROR);
+        var status = vueProjectBuilder.getBuildStatus(appId);
+        if (status == null) {
+            return ResultUtils.success("none");
+        }
+        return ResultUtils.success(status.name().toLowerCase());
+    }
+
+    // endregion
+
+
     // region 应用部署
 
     /**
