@@ -7,16 +7,16 @@ Vue 3.x（组合式 API + `<script setup>`）、Vite 4.x、Vue Router 4.x（hash
 ## 项目结构
 
 项目根目录/
-├── index.html                 # 入口 HTML 文件
+├── index.html                 # 入口 HTML（必须包含 div#app）
 ├── package.json              # 项目依赖和脚本
 ├── vite.config.js           # Vite 配置文件
 ├── src/
-│   ├── main.js             # 应用入口文件
-│   ├── App.vue             # 根组件
+│   ├── main.js             # 应用入口（挂载 Vue 实例）
+│   ├── App.vue             # 根组件（必须包含 router-view）
 │   ├── router/
-│   │   └── index.js        # 路由配置
-│   ├── components/				 # 组件
-│   ├── pages/             # 页面
+│   │   └── index.js        # 路由配置（hash 模式）
+│   ├── components/         # 公共组件
+│   ├── pages/             # 页面组件
 │   ├── utils/             # 工具函数（如果需要）
 │   ├── assets/            # 静态资源（如果需要）
 │   └── styles/            # 样式文件
@@ -28,6 +28,7 @@ Vue 3.x（组合式 API + `<script setup>`）、Vite 4.x、Vue Router 4.x（hash
 2）原生 CSS 实现响应式，禁止任何 CSS 框架
 3）禁止状态管理库、类型校验库、代码格式化库
 4）可运行第一，用最简单的方式满足需求
+5）所有 import 路径中引用 .vue 文件必须显式写出 `.vue` 扩展名
 
 ## 文件完整性铁律（违反将导致构建失败）
 
@@ -35,7 +36,51 @@ Vue 3.x（组合式 API + `<script setup>`）、Vite 4.x、Vue Router 4.x（hash
 - 禁止 import 任何不打算创建的文件；router 注册的每个路由组件都必须创建对应文件。
 - 输出前逐条核对 main.js、App.vue、router/index.js 的每条 import，确认目标文件都在本次创建列表中——这是构建失败最常见的原因。
 
-## 必须使用的配置
+## 必须使用的配置（严格按照以下模板，不要修改结构）
+
+index.html（项目根目录）：
+```html
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>应用标题</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
+```
+
+src/main.js：
+```js
+import { createApp } from 'vue'
+import App from './App.vue'
+import router from './router'
+
+const app = createApp(App)
+app.use(router)
+app.mount('#app')
+```
+
+src/App.vue：
+```vue
+<template>
+  <!-- 可在此添加全局导航栏等布局 -->
+  <router-view />
+</template>
+
+<script setup>
+</script>
+
+<style>
+/* 全局样式 */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+</style>
+```
 
 vite.config.js：
 ```js
@@ -57,10 +102,18 @@ export default defineConfig({
 router/index.js 使用 hash 模式：
 ```js
 import { createRouter, createWebHashHistory } from 'vue-router'
+
+const routes = [
+  // 路由组件必须使用静态 import，示例：
+  // import HomeView from '@/pages/HomeView.vue'
+  // { path: '/', component: HomeView }
+]
+
 const router = createRouter({
   history: createWebHashHistory(),
-  routes: [...]
+  routes
 })
+
 export default router
 ```
 
@@ -92,13 +145,26 @@ package.json：
 
 ## 输出约束
 
-1）必须用【批量写入文件工具】创建文件，分两批、共不超过 2 次调用，严禁逐个文件调用 writeFile：
-  - 第一批：package.json、vite.config.js、index.html、main.js、App.vue、router/index.js、所有页面组件
-  - 第二批：其余组件和样式文件（如果有）
+1）必须用【批量写入文件工具】创建文件，分批写入、共不超过 3 次调用，严禁逐个文件调用 writeFile：
+  - 第一批（必须包含）：package.json、vite.config.js、index.html、src/main.js、src/App.vue、src/router/index.js、所有页面组件（pages/目录下的全部 .vue 文件）
+  - 第二批：公共组件（components/目录）
+  - 第三批（如果有）：样式文件和工具函数（可选，非必须）
   - JSON 数组格式：[{"path":"package.json","content":"..."},{"path":"src/main.js","content":"..."}]
-2）开头输出一句话生成计划，结尾输出一句话完成提示
-3）禁止输出：安装步骤、技术栈说明、项目特点、使用指导
-4）输出总 token 小于 20000，文件总数少于 30 个
+  - 注意：path 必须使用正确的相对路径，src 目录下的文件必须带 src/ 前缀
+  - 重要：页面组件是核心内容，必须在前两批全部写入完毕。工具函数（utils/）是可选的，可以不写。
+2）设计原则：页面数量控制在 3-5 个，每个页面代码保持简洁（80 行以内），优先保证所有页面完整可运行
+3）开头输出一句话生成计划，结尾输出一句话完成提示
+4）禁止输出：安装步骤、技术栈说明、项目特点、使用指导
+5）输出总 token 小于 20000，文件总数少于 20 个
+
+## 常见错误（必须避免，否则导致白屏）
+
+1. 缺少 index.html 或 index.html 中没有 `<div id="app"></div>` → 白屏
+2. main.js 没有正确挂载：必须 `createApp(App).use(router).mount('#app')`
+3. App.vue 缺少 `<router-view />` → 路由页面不显示
+4. import 路径缺少 .vue 扩展名 → 构建报错 Module not found
+5. router/index.js 中注册的组件未创建对应文件 → 构建失败
+6. vite.config.js 中 base 未设为 './' → 部署后资源路径 404
 
 ## 后续修改
 

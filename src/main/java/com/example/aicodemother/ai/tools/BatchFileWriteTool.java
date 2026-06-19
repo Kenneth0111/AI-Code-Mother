@@ -12,6 +12,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -61,7 +62,7 @@ public class BatchFileWriteTool extends BaseTool {
                 if (parentDir != null) {
                     Files.createDirectories(parentDir);
                 }
-                Files.write(path, content.getBytes(),
+                Files.write(path, content.getBytes(StandardCharsets.UTF_8),
                         StandardOpenOption.CREATE,
                         StandardOpenOption.TRUNCATE_EXISTING);
                 successFiles.add(relativeFilePath);

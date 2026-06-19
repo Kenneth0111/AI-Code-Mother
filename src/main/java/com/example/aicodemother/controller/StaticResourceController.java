@@ -72,9 +72,17 @@ public class StaticResourceController {
     private String getContentTypeWithCharset(String filePath) {
         if (filePath.endsWith(".html")) return "text/html; charset=UTF-8";
         if (filePath.endsWith(".css")) return "text/css; charset=UTF-8";
-        if (filePath.endsWith(".js")) return "application/javascript; charset=UTF-8";
+        if (filePath.endsWith(".js") || filePath.endsWith(".mjs")) return "application/javascript; charset=UTF-8";
+        if (filePath.endsWith(".json")) return "application/json; charset=UTF-8";
         if (filePath.endsWith(".png")) return "image/png";
-        if (filePath.endsWith(".jpg")) return "image/jpeg";
+        if (filePath.endsWith(".jpg") || filePath.endsWith(".jpeg")) return "image/jpeg";
+        if (filePath.endsWith(".gif")) return "image/gif";
+        if (filePath.endsWith(".svg")) return "image/svg+xml";
+        if (filePath.endsWith(".ico")) return "image/x-icon";
+        if (filePath.endsWith(".webp")) return "image/webp";
+        if (filePath.endsWith(".woff")) return "font/woff";
+        if (filePath.endsWith(".woff2")) return "font/woff2";
+        if (filePath.endsWith(".ttf")) return "font/ttf";
         return "application/octet-stream";
     }
 }

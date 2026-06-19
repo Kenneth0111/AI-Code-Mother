@@ -12,6 +12,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
@@ -79,6 +80,8 @@ public class VueProjectBuilder {
             return false;
         }
         log.info("开始构建 Vue 项目: {}", projectPath);
+        // 构建前自动补充关键入口文件
+        repairEntryFiles(projectDir);
         // 构建前自动修复：为缺失的本地 CSS / Vue 组件 import 创建占位文件，避免 AI 漏建文件导致构建失败
         repairMissingImports(projectDir);
         // 执行 npm install
@@ -91,13 +94,11 @@ public class VueProjectBuilder {
             log.error("npm run build 执行失败");
             return false;
         }
-        // 验证 dist 目录是否生成
-        File distDir = new File(projectDir, "dist");
-        if (!distDir.exists()) {
-            log.error("构建完成但 dist 目录未生成: {}", distDir.getAbsolutePath());
+        // 验证构建产物有效性
+        if (!validateBuildOutput(projectDir)) {
             return false;
         }
-        log.info("Vue 项目构建成功，dist 目录: {}", distDir.getAbsolutePath());
+        log.info("Vue 项目构建成功，dist 目录: {}", new File(projectDir, "dist").getAbsolutePath());
         return true;
     }
 
@@ -184,16 +185,21 @@ public class VueProjectBuilder {
         }
     }
 
+    // 静态 import（含 from）：import Foo from './Foo.vue' 或 import { x } from '@/utils/x'
+    private static final Pattern STATIC_IMPORT_PATTERN = Pattern.compile(
+            "from\\s+['\"]((\\.\\.?/|@/)[^'\"]+)['\"]");
+    // 副作用 import：import './assets/global.css' 或 import '@/styles/main.css'
+    private static final Pattern SIDE_EFFECT_IMPORT_PATTERN = Pattern.compile(
+            "import\\s+['\"]((\\.\\.?/|@/)[^'\"]+)['\"]");
+    // 动态 import：() => import('./pages/Home.vue') 或 import('@/pages/About.vue')
+    private static final Pattern DYNAMIC_IMPORT_PATTERN = Pattern.compile(
+            "import\\s*\\(\\s*['\"]((\\.\\.?/|@/)[^'\"]+)['\"]\\s*\\)");
+
     /**
      * 构建前自动修复：扫描 .js / .vue 文件中引用的本地文件，
      * 为缺失的 CSS / Vue 组件 import 创建占位文件，避免 AI 漏建文件导致 vite build 失败。
-     * 仅修复 CSS 和 Vue 组件（补占位安全，不影响整体可运行），
-     * 不处理 .js 模块缺失（导出结构未知，补桩可能掩盖真实错误）。
      */
     private void repairMissingImports(File projectDir) {
-        // 匹配本地 import：相对路径(./ ../)或 @ 别名，扩展名为 .css 或 .vue
-        Pattern importPattern = Pattern.compile(
-                "(?:import\\s+[^'\"]*['\"]|from\\s+['\"])((?:\\.{1,2}/|@/)[^'\"]+\\.(?:css|vue))['\"]");
         File srcDir = new File(projectDir, "src");
         if (!srcDir.exists()) {
             return;
@@ -208,9 +214,11 @@ public class VueProjectBuilder {
                     .toList();
             for (Path sourceFile : sourceFiles) {
                 String content = Files.readString(sourceFile, StandardCharsets.UTF_8);
-                Matcher matcher = importPattern.matcher(content);
-                while (matcher.find()) {
-                    String importPath = matcher.group(1);
+                Set<String> importPaths = new java.util.LinkedHashSet<>();
+                extractImportPaths(STATIC_IMPORT_PATTERN, content, importPaths);
+                extractImportPaths(SIDE_EFFECT_IMPORT_PATTERN, content, importPaths);
+                extractImportPaths(DYNAMIC_IMPORT_PATTERN, content, importPaths);
+                for (String importPath : importPaths) {
                     File target = resolveImportPath(srcDir, sourceFile.toFile(), importPath);
                     if (target != null && !target.exists()) {
                         createStubFile(target);
@@ -219,6 +227,20 @@ public class VueProjectBuilder {
             }
         } catch (IOException e) {
             log.error("构建前修复 import 时出错: {}", e.getMessage(), e);
+        }
+    }
+
+    private void extractImportPaths(Pattern pattern, String content, Set<String> results) {
+        Matcher matcher = pattern.matcher(content);
+        while (matcher.find()) {
+            String path = matcher.group(1);
+            // 只处理本地文件（.css / .vue），跳过 .js 模块（导出结构未知）
+            if (path.endsWith(".css") || path.endsWith(".vue")) {
+                results.add(path);
+            } else if (!path.contains(".")) {
+                // 无扩展名的 import，尝试当作 .vue 组件处理
+                results.add(path + ".vue");
+            }
         }
     }
 
@@ -256,6 +278,105 @@ public class VueProjectBuilder {
             return new File(srcDir, importPath.substring(2));
         }
         return new File(sourceFile.getParentFile(), importPath);
+    }
+
+    /**
+     * 构建前补充关键入口文件：如果 AI 遗漏了 index.html 或 src/main.js，使用标准模板自动补充。
+     */
+    private void repairEntryFiles(File projectDir) {
+        File indexHtml = new File(projectDir, "index.html");
+        if (!indexHtml.exists()) {
+            log.warn("构建前修复：缺少 index.html，自动补充标准模板");
+            String template = """
+                    <!DOCTYPE html>
+                    <html lang="zh-CN">
+                      <head>
+                        <meta charset="UTF-8" />
+                        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+                        <title>Vue App</title>
+                      </head>
+                      <body>
+                        <div id="app"></div>
+                        <script type="module" src="/src/main.js"></script>
+                      </body>
+                    </html>
+                    """;
+            try {
+                Files.writeString(indexHtml.toPath(), template, StandardCharsets.UTF_8);
+            } catch (IOException e) {
+                log.error("补充 index.html 失败: {}", e.getMessage());
+            }
+        }
+        File srcDir = new File(projectDir, "src");
+        File mainJs = new File(srcDir, "main.js");
+        if (!mainJs.exists()) {
+            log.warn("构建前修复：缺少 src/main.js，自动补充标准模板");
+            String template = """
+                    import { createApp } from 'vue'
+                    import App from './App.vue'
+
+                    const app = createApp(App)
+                    app.mount('#app')
+                    """;
+            try {
+                if (!srcDir.exists()) {
+                    srcDir.mkdirs();
+                }
+                Files.writeString(mainJs.toPath(), template, StandardCharsets.UTF_8);
+            } catch (IOException e) {
+                log.error("补充 src/main.js 失败: {}", e.getMessage());
+            }
+        }
+        File appVue = new File(srcDir, "App.vue");
+        if (!appVue.exists()) {
+            log.warn("构建前修复：缺少 src/App.vue，自动补充标准模板");
+            String template = """
+                    <template>
+                      <div id="app">
+                        <router-view />
+                      </div>
+                    </template>
+
+                    <script setup>
+                    </script>
+
+                    <style>
+                    * { margin: 0; padding: 0; box-sizing: border-box; }
+                    </style>
+                    """;
+            try {
+                Files.writeString(appVue.toPath(), template, StandardCharsets.UTF_8);
+            } catch (IOException e) {
+                log.error("补充 src/App.vue 失败: {}", e.getMessage());
+            }
+        }
+    }
+
+    /**
+     * 验证构建产物：dist/index.html 必须存在且包含 script 标签。
+     */
+    private boolean validateBuildOutput(File projectDir) {
+        File distDir = new File(projectDir, "dist");
+        if (!distDir.exists()) {
+            log.error("构建完成但 dist 目录未生成: {}", distDir.getAbsolutePath());
+            return false;
+        }
+        File distIndex = new File(distDir, "index.html");
+        if (!distIndex.exists()) {
+            log.error("构建完成但 dist/index.html 不存在");
+            return false;
+        }
+        try {
+            String htmlContent = Files.readString(distIndex.toPath(), StandardCharsets.UTF_8);
+            if (!htmlContent.contains("<script")) {
+                log.error("dist/index.html 不包含 script 标签，构建产物可能为空");
+                return false;
+            }
+        } catch (IOException e) {
+            log.error("读取 dist/index.html 失败: {}", e.getMessage());
+            return false;
+        }
+        return true;
     }
 
 }
