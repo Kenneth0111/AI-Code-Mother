@@ -47,12 +47,12 @@ public class AiCodeGeneratorServiceFactory {
      * 缓存策略：
      * - 最大缓存 1000 个实例
      * - 写入后 30 分钟过期
-     * - 访问后 10 分钟过期
+     * - 访问后 30 分钟过期（与写入对齐，避免用户在预览页停留时缓存被驱逐导致 AI 失忆）
      */
     private final Cache<String, AiCodeGeneratorService> serviceCache = Caffeine.newBuilder()
             .maximumSize(1000)
             .expireAfterWrite(Duration.ofMinutes(30))
-            .expireAfterAccess(Duration.ofMinutes(10))
+            .expireAfterAccess(Duration.ofMinutes(30))
             .removalListener((key, value, cause) -> log.debug("AI 服务实例被移除，appId: {}, 原因: {}", key, cause))
             .build();
 
@@ -104,13 +104,13 @@ public class AiCodeGeneratorServiceFactory {
         MessageWindowChatMemory chatMemory = MessageWindowChatMemory
                 .builder()
                 .id(appId)
-                .maxMessages(50)
+                .maxMessages(100)
                 .chatMemoryStore(new SafeChatMemoryStore(redisChatMemoryStore))
                 .build();
-        // VUE_PROJECT 使用推理模型，其 reasoning_content 无法从数据库还原，仅依赖 Redis 记忆
-        if (codeGenType != CodeGenTypeEnum.VUE_PROJECT) {
-            chatHistoryService.loadChatHistoryToMemory(appId, chatMemory, 20);
-        }
+        // 所有模式都从数据库加载历史对话，保证 Caffeine 缓存过期或服务重启后仍能重建上下文，
+        // 避免 AI 在多轮对话中"失忆"后重新声明意图（重复出现"我将创建..."）。
+        // loadChatHistoryToMemory 只构造纯文本 UserMessage / AiMessage，不带 tool_calls，与 SafeChatMemoryStore 兼容。
+        chatHistoryService.loadChatHistoryToMemory(appId, chatMemory, 20);
         return switch (codeGenType) {
             case VUE_PROJECT -> AiServices.builder(AiCodeGeneratorService.class)
                     .streamingChatModel(reasoningStreamingChatModel)

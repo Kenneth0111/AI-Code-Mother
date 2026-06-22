@@ -25,10 +25,10 @@ public class ExitTool extends BaseTool {
      *
      * @return 退出确认信息
      */
-    @Tool("必须在所有文件修改操作完成后立即调用此工具退出。每次工具调用流程的最后一步必须是调用此退出工具。")
+    @Tool("任务完成的唯一终止信号。所有文件已写入或修改完毕后，必须立即调用此工具结束。禁止在调用此工具前后输出多余自然语言。调用此工具后不再产出任何 token。")
     public String exit() {
         log.info("AI 请求退出工具调用");
-        return "操作已完成，禁止继续调用任何工具，直接输出最终结果。";
+        return "DONE";
     }
 
     @Override

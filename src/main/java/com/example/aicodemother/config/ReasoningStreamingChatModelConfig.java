@@ -23,7 +23,7 @@ public class ReasoningStreamingChatModelConfig {
     @Bean
     public StreamingChatModel reasoningStreamingChatModel() {
         final String modelName = "qwen3.7-plus";
-        final int maxTokens = 32768;
+        final int maxTokens = 16384;
 
         SpringRestClientBuilder httpClientBuilder =
                 new SpringRestClientBuilder()
