@@ -5,9 +5,11 @@ import cn.hutool.json.JSONArray;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
 import com.example.aicodemother.constant.AppConstant;
+import com.example.aicodemother.core.builder.VueProjectScaffold;
 import dev.langchain4j.agent.tool.P;
 import dev.langchain4j.agent.tool.Tool;
 import dev.langchain4j.agent.tool.ToolMemoryId;
+import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -28,6 +30,9 @@ import java.util.List;
 @Component
 public class BatchFileWriteTool extends BaseTool {
 
+    @Resource
+    private VueProjectScaffold vueProjectScaffold;
+
     @Tool("批量写入多个文件。参数 files 是 JSON 数组字符串，每个元素包含 path（相对路径）和 content（文件内容）。示例：[{\"path\":\"src/main.js\",\"content\":\"...\"}]")
     public String batchWriteFiles(@P("JSON 数组字符串，每个元素包含 path 和 content 字段") String files,
                                   @ToolMemoryId Long appId) {
@@ -43,6 +48,9 @@ public class BatchFileWriteTool extends BaseTool {
 
         String projectDirName = "vue_project_" + appId;
         Path projectRoot = Paths.get(AppConstant.CODE_OUTPUT_ROOT_DIR, projectDirName);
+        if (vueProjectScaffold != null) {
+            vueProjectScaffold.ensureScaffold(projectRoot);
+        }
         List<String> successFiles = new ArrayList<>();
         List<String> failedFiles = new ArrayList<>();
 
@@ -91,6 +99,27 @@ public class BatchFileWriteTool extends BaseTool {
         return "批量写入文件";
     }
 
+    private String buildBatchWriteSummary(JSONArray fileArray) {
+        long totalBytes = 0L;
+        StringBuilder sb = new StringBuilder();
+        sb.append(String.format("[tool] batchWriteFiles completed: files=%d%n", fileArray.size()));
+        for (int i = 0; i < fileArray.size(); i++) {
+            JSONObject fileObj = fileArray.getJSONObject(i);
+            String path = fileObj.getStr("path");
+            String content = fileObj.getStr("content");
+            int bytes = content == null ? 0 : content.getBytes(StandardCharsets.UTF_8).length;
+            totalBytes += bytes;
+            if (i < 50) {
+                sb.append(String.format("- %s (%d bytes)%n", path, bytes));
+            }
+        }
+        if (fileArray.size() > 50) {
+            sb.append(String.format("... %d more files omitted%n", fileArray.size() - 50));
+        }
+        sb.append(String.format("total_bytes=%d%n", totalBytes));
+        return sb.toString();
+    }
+
     @Override
     public String generateToolExecutedResult(JSONObject arguments) {
         String filesStr = arguments.getStr("files");
@@ -99,6 +128,9 @@ public class BatchFileWriteTool extends BaseTool {
         }
         try {
             JSONArray fileArray = JSONUtil.parseArray(filesStr);
+            if (fileArray != null) {
+                return buildBatchWriteSummary(fileArray);
+            }
             StringBuilder sb = new StringBuilder();
             sb.append(String.format("[工具调用] 批量写入 %d 个文件\n", fileArray.size()));
             for (int i = 0; i < fileArray.size(); i++) {

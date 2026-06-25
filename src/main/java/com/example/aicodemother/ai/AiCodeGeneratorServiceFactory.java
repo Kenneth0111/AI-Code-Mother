@@ -24,6 +24,8 @@ import java.time.Duration;
 @Slf4j
 public class AiCodeGeneratorServiceFactory {
 
+    public static final int VUE_PROJECT_MAX_SEQUENTIAL_TOOL_INVOCATIONS = 5;
+
     @Resource
     private ChatModel chatModel;
 
@@ -118,7 +120,7 @@ public class AiCodeGeneratorServiceFactory {
                     .tools((Object[]) toolManager.getAllTools())
                     // 硬上限：使用批量写入后，正常生成只需 3-5 次工具调用
                     // 设为 15 次足够应对修改场景，同时防止循环失控
-                    .maxSequentialToolsInvocations(15)
+                    .maxSequentialToolsInvocations(VUE_PROJECT_MAX_SEQUENTIAL_TOOL_INVOCATIONS)
                     // 处理工具调用幻觉问题
                     .hallucinatedToolNameStrategy(toolExecutionRequest -> ToolExecutionResultMessage.from(toolExecutionRequest, "Error: there is no tool called " + toolExecutionRequest.name()))
                     .build();

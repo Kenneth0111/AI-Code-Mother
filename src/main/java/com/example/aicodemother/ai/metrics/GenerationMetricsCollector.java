@@ -65,9 +65,14 @@ public class GenerationMetricsCollector {
         long total = metrics.totalDurationMs();
         long llm = metrics.llmDurationMs();
         long tool = metrics.toolDurationMs();
-        long other = Math.max(0, total - llm - tool);
+        long sinkNext = metrics.sinkNextDurationMs();
+        long toolWait = metrics.toolWaitDurationMs();
+        long other = Math.max(0, total - llm - tool - sinkNext);
 
         log.info("[METRICS] finish appId={} total_ms={} llm_ms={} tool_ms={} other_ms={} " +
+                        "tool_wait_ms={} sink_next_ms={} max_sink_next_ms={} " +
+                        "first_event_ms={} first_ai_ms={} first_tool_request_ms={} first_tool_executed_ms={} " +
+                        "ai_chunks={} partial_tool_chunks={} tool_request_events={} tool_executed_events={} " +
                         "tool_calls={} modify_no_match={} file_not_found={} tool_error={} " +
                         "in_tokens={} out_tokens={} model={} reason={} per_tool=[{}]",
                 metrics.getAppId(),
@@ -75,6 +80,17 @@ public class GenerationMetricsCollector {
                 llm,
                 tool,
                 other,
+                toolWait,
+                sinkNext,
+                metrics.maxSinkNextDurationMs(),
+                metrics.sinceStartMs(metrics.getFirstEventNanos().get()),
+                metrics.sinceStartMs(metrics.getFirstAiResponseNanos().get()),
+                metrics.sinceStartMs(metrics.getFirstToolRequestNanos().get()),
+                metrics.sinceStartMs(metrics.getFirstToolExecutedNanos().get()),
+                metrics.getAiResponseChunkCount().get(),
+                metrics.getPartialToolCallChunkCount().get(),
+                metrics.getToolRequestEventCount().get(),
+                metrics.getToolExecutedEventCount().get(),
                 metrics.getToolCallCount().get(),
                 metrics.getModifyNoMatchCount().get(),
                 metrics.getFileNotFoundCount().get(),

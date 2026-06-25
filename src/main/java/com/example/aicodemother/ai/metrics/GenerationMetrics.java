@@ -2,8 +2,8 @@ package com.example.aicodemother.ai.metrics;
 
 import lombok.Data;
 
-import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -27,13 +27,35 @@ public class GenerationMetrics {
 
     private long totalEndNanos;
 
+    private final AtomicLong firstEventNanos = new AtomicLong();
+
+    private final AtomicLong firstAiResponseNanos = new AtomicLong();
+
+    private final AtomicLong firstToolRequestNanos = new AtomicLong();
+
+    private final AtomicLong firstToolExecutedNanos = new AtomicLong();
+
     private final AtomicLong llmAccumulatedNanos = new AtomicLong();
 
     private final AtomicLong toolAccumulatedNanos = new AtomicLong();
 
+    private final AtomicLong toolWaitAccumulatedNanos = new AtomicLong();
+
+    private final AtomicLong sinkNextAccumulatedNanos = new AtomicLong();
+
+    private final AtomicLong maxSinkNextNanos = new AtomicLong();
+
     private final AtomicInteger toolCallCount = new AtomicInteger();
 
-    private final Map<String, AtomicInteger> perToolCount = new HashMap<>();
+    private final AtomicInteger aiResponseChunkCount = new AtomicInteger();
+
+    private final AtomicInteger partialToolCallChunkCount = new AtomicInteger();
+
+    private final AtomicInteger toolRequestEventCount = new AtomicInteger();
+
+    private final AtomicInteger toolExecutedEventCount = new AtomicInteger();
+
+    private final Map<String, AtomicInteger> perToolCount = new ConcurrentHashMap<>();
 
     private final AtomicInteger modifyNoMatchCount = new AtomicInteger();
 
@@ -69,5 +91,29 @@ public class GenerationMetrics {
 
     public long toolDurationMs() {
         return toolAccumulatedNanos.get() / 1_000_000;
+    }
+
+    public long sinceStartMs(long nanos) {
+        if (nanos <= 0) {
+            return -1;
+        }
+        return (nanos - totalStartNanos) / 1_000_000;
+    }
+
+    public long toolWaitDurationMs() {
+        return toolWaitAccumulatedNanos.get() / 1_000_000;
+    }
+
+    public long sinkNextDurationMs() {
+        return sinkNextAccumulatedNanos.get() / 1_000_000;
+    }
+
+    public long maxSinkNextDurationMs() {
+        return maxSinkNextNanos.get() / 1_000_000;
+    }
+
+    public void recordSinkNext(long durationNanos) {
+        sinkNextAccumulatedNanos.addAndGet(durationNanos);
+        maxSinkNextNanos.accumulateAndGet(durationNanos, Math::max);
     }
 }

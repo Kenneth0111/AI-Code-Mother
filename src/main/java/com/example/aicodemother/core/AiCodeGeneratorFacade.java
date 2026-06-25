@@ -24,6 +24,7 @@ import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.FluxSink;
 
 import java.io.File;
 
@@ -134,34 +135,58 @@ public class AiCodeGeneratorFacade {
      * @return Flux<String> 流式响应
      */
     private Flux<String> processTokenStream(TokenStream tokenStream, Long appId) {
-        GenerationMetrics metrics = metricsCollector.start(appId);
         // LLM 流的当前段起点：onPartialResponse 第一次到达时记录，beforeToolExecution 时累计
-        long[] llmSegmentStartNanos = {System.nanoTime()};
-        boolean[] inLlmSegment = {true};
-        return Flux.create(sink -> tokenStream.onPartialResponse((String partialResponse) -> {
+        return Flux.create(sink -> {
+            GenerationMetrics metrics = metricsCollector.start(appId);
+            long[] llmSegmentStartNanos = {System.nanoTime()};
+            boolean[] inLlmSegment = {true};
+            long[] pendingToolRequestStartNanos = {0L};
+            tokenStream.onPartialResponse((String partialResponse) -> {
+                    markFirstEvent(metrics);
+                    metrics.getAiResponseChunkCount().incrementAndGet();
+                    metrics.getFirstAiResponseNanos().compareAndSet(0, System.nanoTime());
                     if (!inLlmSegment[0]) {
                         // 工具执行后回到 LLM 阶段，重新计时
                         llmSegmentStartNanos[0] = System.nanoTime();
                         inLlmSegment[0] = true;
                     }
                     AiResponseMessage aiResponseMessage = new AiResponseMessage(partialResponse);
-                    sink.next(JSONUtil.toJsonStr(aiResponseMessage));
+                    emitMeasured(sink, metrics, JSONUtil.toJsonStr(aiResponseMessage));
                 }).onPartialToolCall(partialToolCall -> {
+                    markFirstEvent(metrics);
+                    metrics.getPartialToolCallChunkCount().incrementAndGet();
+                    if (!inLlmSegment[0]) {
+                        llmSegmentStartNanos[0] = System.nanoTime();
+                        inLlmSegment[0] = true;
+                    }
                     PartialToolCallMessage partialToolCallMessage = new PartialToolCallMessage(partialToolCall);
-                    sink.next(JSONUtil.toJsonStr(partialToolCallMessage));
+                    emitMeasured(sink, metrics, JSONUtil.toJsonStr(partialToolCallMessage));
                 }).beforeToolExecution(beforeToolExecution -> {
+                    markFirstEvent(metrics);
+                    metrics.getToolRequestEventCount().incrementAndGet();
+                    metrics.getFirstToolRequestNanos().compareAndSet(0, System.nanoTime());
                     if (inLlmSegment[0]) {
                         metrics.getLlmAccumulatedNanos().addAndGet(System.nanoTime() - llmSegmentStartNanos[0]);
                         inLlmSegment[0] = false;
                     }
+                    pendingToolRequestStartNanos[0] = System.nanoTime();
                     ToolRequestMessage toolRequestMessage = new ToolRequestMessage(beforeToolExecution);
-                    sink.next(JSONUtil.toJsonStr(toolRequestMessage));
+                    emitMeasured(sink, metrics, JSONUtil.toJsonStr(toolRequestMessage));
                 }).onToolExecuted((ToolExecution toolExecution) -> {
+                    markFirstEvent(metrics);
+                    metrics.getToolExecutedEventCount().incrementAndGet();
+                    metrics.getFirstToolExecutedNanos().compareAndSet(0, System.nanoTime());
+                    if (pendingToolRequestStartNanos[0] > 0) {
+                        metrics.getToolWaitAccumulatedNanos()
+                                .addAndGet(System.nanoTime() - pendingToolRequestStartNanos[0]);
+                        pendingToolRequestStartNanos[0] = 0L;
+                    }
                     recordToolExecution(appId, toolExecution);
                     ToolExecutedMessage toolExecutedMessage = new ToolExecutedMessage(toolExecution);
-                    sink.next(JSONUtil.toJsonStr(toolExecutedMessage));
+                    emitMeasured(sink, metrics, JSONUtil.toJsonStr(toolExecutedMessage));
                 })
                 .onCompleteResponse((ChatResponse response) -> {
+                    markFirstEvent(metrics);
                     if (inLlmSegment[0]) {
                         metrics.getLlmAccumulatedNanos().addAndGet(System.nanoTime() - llmSegmentStartNanos[0]);
                         inLlmSegment[0] = false;
@@ -179,6 +204,7 @@ public class AiCodeGeneratorFacade {
                     sink.complete();
                 })
                 .onError((Throwable error) -> {
+                    markFirstEvent(metrics);
                     if (inLlmSegment[0]) {
                         metrics.getLlmAccumulatedNanos().addAndGet(System.nanoTime() - llmSegmentStartNanos[0]);
                         inLlmSegment[0] = false;
@@ -187,24 +213,35 @@ public class AiCodeGeneratorFacade {
                     if (errorMsg.contains("exceeded") && errorMsg.contains("sequential tool invocations")) {
                         log.warn("工具调用次数超限，优雅结束流: {}", errorMsg);
                         AiResponseMessage msg = new AiResponseMessage("\n\n[系统提示] 工具调用次数已达上限，操作已结束。已生成的文件请检查预览确认效果。");
-                        sink.next(JSONUtil.toJsonStr(msg));
+                        emitMeasured(sink, metrics, JSONUtil.toJsonStr(msg));
                         metricsCollector.finish(appId, "tool_limit_exceeded");
                         sink.complete();
                     } else if (isConnectionError(error)) {
                         log.warn("网络连接异常，优雅结束流: {}", errorMsg);
                         AiResponseMessage msg = new AiResponseMessage("\n\n[系统提示] 网络连接中断，已生成的文件已保存。如需继续生成，请重新发送消息。");
-                        sink.next(JSONUtil.toJsonStr(msg));
+                        emitMeasured(sink, metrics, JSONUtil.toJsonStr(msg));
                         metricsCollector.finish(appId, "connection_error");
                         sink.complete();
                     } else {
                         log.error("TokenStream 处理失败", error);
                         AiResponseMessage msg = new AiResponseMessage("\n\n[系统提示] 生成过程出现异常：" + errorMsg + "。请稍后重试。");
-                        sink.next(JSONUtil.toJsonStr(msg));
+                        emitMeasured(sink, metrics, JSONUtil.toJsonStr(msg));
                         metricsCollector.finish(appId, "error");
                         sink.complete();
                     }
                 })
-                .start());
+                .start();
+        });
+    }
+
+    private void markFirstEvent(GenerationMetrics metrics) {
+        metrics.getFirstEventNanos().compareAndSet(0, System.nanoTime());
+    }
+
+    private void emitMeasured(FluxSink<String> sink, GenerationMetrics metrics, String payload) {
+        long start = System.nanoTime();
+        sink.next(payload);
+        metrics.recordSinkNext(System.nanoTime() - start);
     }
 
     private void recordToolExecution(Long appId, ToolExecution toolExecution) {
