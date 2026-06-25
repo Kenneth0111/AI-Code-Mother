@@ -71,6 +71,7 @@ public class GenerationMetricsCollector {
 
         log.info("[METRICS] finish appId={} total_ms={} llm_ms={} tool_ms={} other_ms={} " +
                         "tool_wait_ms={} sink_next_ms={} max_sink_next_ms={} " +
+                        "callback_gap_ms={} max_callback_gap_ms={} terminal_callback_gap_ms={} " +
                         "first_event_ms={} first_ai_ms={} first_tool_request_ms={} first_tool_executed_ms={} " +
                         "ai_chunks={} partial_tool_chunks={} tool_request_events={} tool_executed_events={} " +
                         "tool_calls={} modify_no_match={} file_not_found={} tool_error={} " +
@@ -83,6 +84,9 @@ public class GenerationMetricsCollector {
                 toolWait,
                 sinkNext,
                 metrics.maxSinkNextDurationMs(),
+                metrics.callbackGapDurationMs(),
+                metrics.maxCallbackGapDurationMs(),
+                metrics.terminalCallbackGapDurationMs(),
                 metrics.sinceStartMs(metrics.getFirstEventNanos().get()),
                 metrics.sinceStartMs(metrics.getFirstAiResponseNanos().get()),
                 metrics.sinceStartMs(metrics.getFirstToolRequestNanos().get()),

@@ -142,7 +142,7 @@ public class AiCodeGeneratorFacade {
             boolean[] inLlmSegment = {true};
             long[] pendingToolRequestStartNanos = {0L};
             tokenStream.onPartialResponse((String partialResponse) -> {
-                    markFirstEvent(metrics);
+                    recordCallbackEvent(metrics, false);
                     metrics.getAiResponseChunkCount().incrementAndGet();
                     metrics.getFirstAiResponseNanos().compareAndSet(0, System.nanoTime());
                     if (!inLlmSegment[0]) {
@@ -153,7 +153,7 @@ public class AiCodeGeneratorFacade {
                     AiResponseMessage aiResponseMessage = new AiResponseMessage(partialResponse);
                     emitMeasured(sink, metrics, JSONUtil.toJsonStr(aiResponseMessage));
                 }).onPartialToolCall(partialToolCall -> {
-                    markFirstEvent(metrics);
+                    recordCallbackEvent(metrics, false);
                     metrics.getPartialToolCallChunkCount().incrementAndGet();
                     if (!inLlmSegment[0]) {
                         llmSegmentStartNanos[0] = System.nanoTime();
@@ -162,7 +162,7 @@ public class AiCodeGeneratorFacade {
                     PartialToolCallMessage partialToolCallMessage = new PartialToolCallMessage(partialToolCall);
                     emitMeasured(sink, metrics, JSONUtil.toJsonStr(partialToolCallMessage));
                 }).beforeToolExecution(beforeToolExecution -> {
-                    markFirstEvent(metrics);
+                    recordCallbackEvent(metrics, false);
                     metrics.getToolRequestEventCount().incrementAndGet();
                     metrics.getFirstToolRequestNanos().compareAndSet(0, System.nanoTime());
                     if (inLlmSegment[0]) {
@@ -173,7 +173,7 @@ public class AiCodeGeneratorFacade {
                     ToolRequestMessage toolRequestMessage = new ToolRequestMessage(beforeToolExecution);
                     emitMeasured(sink, metrics, JSONUtil.toJsonStr(toolRequestMessage));
                 }).onToolExecuted((ToolExecution toolExecution) -> {
-                    markFirstEvent(metrics);
+                    recordCallbackEvent(metrics, false);
                     metrics.getToolExecutedEventCount().incrementAndGet();
                     metrics.getFirstToolExecutedNanos().compareAndSet(0, System.nanoTime());
                     if (pendingToolRequestStartNanos[0] > 0) {
@@ -186,7 +186,7 @@ public class AiCodeGeneratorFacade {
                     emitMeasured(sink, metrics, JSONUtil.toJsonStr(toolExecutedMessage));
                 })
                 .onCompleteResponse((ChatResponse response) -> {
-                    markFirstEvent(metrics);
+                    recordCallbackEvent(metrics, true);
                     if (inLlmSegment[0]) {
                         metrics.getLlmAccumulatedNanos().addAndGet(System.nanoTime() - llmSegmentStartNanos[0]);
                         inLlmSegment[0] = false;
@@ -204,7 +204,7 @@ public class AiCodeGeneratorFacade {
                     sink.complete();
                 })
                 .onError((Throwable error) -> {
-                    markFirstEvent(metrics);
+                    recordCallbackEvent(metrics, true);
                     if (inLlmSegment[0]) {
                         metrics.getLlmAccumulatedNanos().addAndGet(System.nanoTime() - llmSegmentStartNanos[0]);
                         inLlmSegment[0] = false;
@@ -234,8 +234,8 @@ public class AiCodeGeneratorFacade {
         });
     }
 
-    private void markFirstEvent(GenerationMetrics metrics) {
-        metrics.getFirstEventNanos().compareAndSet(0, System.nanoTime());
+    private void recordCallbackEvent(GenerationMetrics metrics, boolean terminal) {
+        metrics.recordCallbackEvent(terminal);
     }
 
     private void emitMeasured(FluxSink<String> sink, GenerationMetrics metrics, String payload) {

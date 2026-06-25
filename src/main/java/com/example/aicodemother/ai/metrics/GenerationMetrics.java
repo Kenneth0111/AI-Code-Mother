@@ -45,6 +45,16 @@ public class GenerationMetrics {
 
     private final AtomicLong maxSinkNextNanos = new AtomicLong();
 
+    private final AtomicLong lastCallbackEventNanos = new AtomicLong();
+
+    private final AtomicLong callbackGapAccumulatedNanos = new AtomicLong();
+
+    private final AtomicLong maxCallbackGapNanos = new AtomicLong();
+
+    private final AtomicLong lastCallbackGapNanos = new AtomicLong();
+
+    private final AtomicLong terminalCallbackGapNanos = new AtomicLong();
+
     private final AtomicInteger toolCallCount = new AtomicInteger();
 
     private final AtomicInteger aiResponseChunkCount = new AtomicInteger();
@@ -115,5 +125,33 @@ public class GenerationMetrics {
     public void recordSinkNext(long durationNanos) {
         sinkNextAccumulatedNanos.addAndGet(durationNanos);
         maxSinkNextNanos.accumulateAndGet(durationNanos, Math::max);
+    }
+
+    public void recordCallbackEvent(boolean terminal) {
+        long now = System.nanoTime();
+        firstEventNanos.compareAndSet(0, now);
+        long previous = lastCallbackEventNanos.getAndSet(now);
+        if (previous <= 0) {
+            return;
+        }
+        long gap = now - previous;
+        lastCallbackGapNanos.set(gap);
+        callbackGapAccumulatedNanos.addAndGet(gap);
+        maxCallbackGapNanos.accumulateAndGet(gap, Math::max);
+        if (terminal) {
+            terminalCallbackGapNanos.set(gap);
+        }
+    }
+
+    public long callbackGapDurationMs() {
+        return callbackGapAccumulatedNanos.get() / 1_000_000;
+    }
+
+    public long maxCallbackGapDurationMs() {
+        return maxCallbackGapNanos.get() / 1_000_000;
+    }
+
+    public long terminalCallbackGapDurationMs() {
+        return terminalCallbackGapNanos.get() / 1_000_000;
     }
 }
