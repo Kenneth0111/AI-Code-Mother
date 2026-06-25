@@ -3,6 +3,7 @@ package com.example.aicodemother.ai.tools;
 import cn.hutool.json.JSONArray;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
+import cn.hutool.core.io.FileUtil;
 import com.example.aicodemother.constant.AppConstant;
 import com.example.aicodemother.core.builder.VueProjectScaffold;
 import dev.langchain4j.agent.tool.P;
@@ -110,6 +111,15 @@ public class BatchFileWriteTool extends BaseTool {
             totalBytes += bytes;
             if (i < 50) {
                 sb.append(String.format("- %s (%d bytes)%n", path, bytes));
+                if (content != null) {
+                    String lang = inferLang(path);
+                    sb.append("```").append(lang).append("\n");
+                    sb.append(content);
+                    if (!content.endsWith("\n")) {
+                        sb.append("\n");
+                    }
+                    sb.append("```\n");
+                }
             }
         }
         if (fileArray.size() > 50) {
@@ -117,6 +127,27 @@ public class BatchFileWriteTool extends BaseTool {
         }
         sb.append(String.format("total_bytes=%d%n", totalBytes));
         return sb.toString();
+    }
+
+    private String inferLang(String filePath) {
+        String suffix = FileUtil.getSuffix(filePath);
+        if (suffix == null || suffix.isBlank()) {
+            return "plaintext";
+        }
+        return switch (suffix.toLowerCase()) {
+            case "js", "mjs", "cjs" -> "javascript";
+            case "ts" -> "typescript";
+            case "vue" -> "vue";
+            case "json" -> "json";
+            case "css" -> "css";
+            case "scss" -> "scss";
+            case "less" -> "less";
+            case "html" -> "html";
+            case "md" -> "markdown";
+            case "yml", "yaml" -> "yaml";
+            case "svg" -> "xml";
+            default -> suffix.toLowerCase();
+        };
     }
 
     @Override

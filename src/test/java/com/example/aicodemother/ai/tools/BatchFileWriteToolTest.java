@@ -16,7 +16,7 @@ import java.nio.file.Paths;
 class BatchFileWriteToolTest {
 
     @Test
-    void generateToolExecutedResultReturnsSummaryWithoutFileContent() {
+    void generateToolExecutedResultReturnsSummaryWithFileContentCodeBlocks() {
         BatchFileWriteTool tool = new BatchFileWriteTool();
         JSONObject arguments = new JSONObject();
         arguments.set("files", JSONUtil.toJsonStr(new Object[]{
@@ -34,8 +34,10 @@ class BatchFileWriteToolTest {
         Assertions.assertTrue(result.contains("src/App.vue"));
         Assertions.assertTrue(result.contains("package.json"));
         Assertions.assertTrue(result.contains("total_bytes="));
-        Assertions.assertFalse(result.contains("SecretMarker"));
-        Assertions.assertFalse(result.contains("vite build"));
+        Assertions.assertTrue(result.contains("```vue"));
+        Assertions.assertTrue(result.contains("<template><SecretMarker /></template>"));
+        Assertions.assertTrue(result.contains("```json"));
+        Assertions.assertTrue(result.contains("vite build"));
     }
 
     @Test
