@@ -7,6 +7,6 @@ class AiCodeGeneratorServiceFactoryContractTest {
 
     @Test
     void vueProjectToolInvocationLimitMatchesPromptBudget() {
-        Assertions.assertEquals(5, AiCodeGeneratorServiceFactory.VUE_PROJECT_MAX_SEQUENTIAL_TOOL_INVOCATIONS);
+        Assertions.assertEquals(3, AiCodeGeneratorServiceFactory.VUE_PROJECT_MAX_SEQUENTIAL_TOOL_INVOCATIONS);
     }
 }

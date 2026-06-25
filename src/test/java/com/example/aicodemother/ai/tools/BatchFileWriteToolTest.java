@@ -50,7 +50,7 @@ class BatchFileWriteToolTest {
         String files = JSONUtil.toJsonStr(new Object[]{page});
 
         try {
-            tool.batchWriteFiles(files, appId);
+            String result = tool.batchWriteFiles(files, appId);
 
             Assertions.assertTrue(Files.exists(projectRoot.resolve("package.json")));
             Assertions.assertTrue(Files.exists(projectRoot.resolve("vite.config.js")));
@@ -59,6 +59,8 @@ class BatchFileWriteToolTest {
             Assertions.assertTrue(Files.exists(projectRoot.resolve("src/App.vue")));
             Assertions.assertTrue(Files.exists(projectRoot.resolve("src/router/index.js")));
             Assertions.assertTrue(Files.exists(projectRoot.resolve("src/pages/HomeView.vue")));
+            Assertions.assertTrue(result.contains("files=1"));
+            Assertions.assertTrue(result.contains("total_bytes="));
         } finally {
             FileUtil.del(projectRoot);
         }

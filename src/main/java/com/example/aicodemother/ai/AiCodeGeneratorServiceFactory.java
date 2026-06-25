@@ -24,7 +24,7 @@ import java.time.Duration;
 @Slf4j
 public class AiCodeGeneratorServiceFactory {
 
-    public static final int VUE_PROJECT_MAX_SEQUENTIAL_TOOL_INVOCATIONS = 5;
+    public static final int VUE_PROJECT_MAX_SEQUENTIAL_TOOL_INVOCATIONS = 3;
 
     @Resource
     private ChatModel chatModel;
